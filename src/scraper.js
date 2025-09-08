@@ -24,8 +24,11 @@ const env_format1 = {
 };
 
 const occto_format1 = {
-  '調整力及び需給バランス評価等に関する委員会': 'https://www.occto.or.jp/iinkai/chouseiryoku/index.html',
-  '容量市場の在り方等に関する検討会・勉強会': 'https://www.occto.or.jp/iinkai/youryou/index.html',
+  '容量市場の在り方等に関する検討会・勉強会': 'https://www.occto.or.jp/iinkai/youryou/index.html'
+};
+
+const occto_format2 = {
+  '調整力及び需給バランス評価等に関する委員会': 'https://www.occto.or.jp/iinkai/chouseiryoku/index.html'
 };
 
 async function getFirstByXPath(page, xpath) {
@@ -101,6 +104,16 @@ async function scrapeAll() {
   }
 
   for (const [name, url] of Object.entries(occto_format1)) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
+      const { text } = await getFirstByXPath(page, '//*[@id="contents"]/ul[1]/li[1]');
+      results.push({ committee: name, latest: text, url });
+    } catch (e) {
+      results.push({ committee: name, latest: `ERROR: ${e}`, url });
+    }
+  }
+
+  for (const [name, url] of Object.entries(occto_format2)) {
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
       const { text } = await getFirstByXPath(page, '//*[@id="contents"]/ul[2]/li[1]');

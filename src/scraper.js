@@ -67,72 +67,82 @@ async function scrapeAll() {
     : { headless: 'new' };
 
   const browser = await puppeteer.launch(launchOptions);
-  const page = await browser.newPage();
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-  page.setDefaultNavigationTimeout(60000);
-  page.setDefaultTimeout(30000);
 
-  const results = [];
+  async function createOptimizedPage() {
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    page.setDefaultNavigationTimeout(30000);
+    page.setDefaultTimeout(20000);
+    await page.setRequestInterception(true);
+    page.on('request', req => {
+      const resourceType = req.resourceType();
+      if (resourceType === 'image' || resourceType === 'stylesheet' || resourceType === 'font' || resourceType === 'media' || resourceType === 'xhr' || resourceType === 'fetch' || resourceType === 'websocket') {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+    return page;
+  }
 
-  for (const [name, url] of Object.entries(meti_format1)) {
+  async function runTask(task) {
+    const page = await createOptimizedPage();
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-      const { text, href } = await getFirstByXPath(page, '//*[@id="__main_contents"]/ul[2]/li[1]/a');
-      results.push({ committee: name, latest: text, url: absolutize(url, href) || url });
+      await page.goto(task.url, { waitUntil: 'domcontentloaded' });
+      const { text, href } = await getFirstByXPath(page, task.xpath);
+      const outUrl = task.needsHref ? (absolutize(task.url, href) || task.url) : task.url;
+      return { committee: task.name, latest: text, url: outUrl };
     } catch (e) {
-      results.push({ committee: name, latest: `ERROR: ${e}`, url });
+      return { committee: task.name, latest: `ERROR: ${e}`, url: task.url };
+    } finally {
+      await page.close().catch(() => {});
     }
   }
 
-  for (const [name, url] of Object.entries(meti_format2)) {
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-      const { text, href } = await getFirstByXPath(page, '//*[@id="__main_contents"]/ul/li[1]/a');
-      results.push({ committee: name, latest: text, url: absolutize(url, href) || url });
-    } catch (e) {
-      results.push({ committee: name, latest: `ERROR: ${e}`, url });
+  function buildTasks() {
+    const tasks = [];
+    for (const [name, url] of Object.entries(meti_format1)) {
+      tasks.push({ name, url, xpath: '//*[@id="__main_contents"]/ul[2]/li[1]/a', needsHref: true });
     }
+    for (const [name, url] of Object.entries(meti_format2)) {
+      tasks.push({ name, url, xpath: '//*[@id="__main_contents"]/ul/li[1]/a', needsHref: true });
+    }
+    for (const [name, url] of Object.entries(egc_format1)) {
+      tasks.push({ name, url, xpath: '//*[@id="meti_or"]/table[2]/tbody/tr[1]/td[1]', needsHref: false });
+    }
+    for (const [name, url] of Object.entries(env_format1)) {
+      tasks.push({ name, url, xpath: '//*[@id="main"]/div[2]/div/div/div/ul/li[1]', needsHref: false });
+    }
+    for (const [name, url] of Object.entries(occto_format1)) {
+      tasks.push({ name, url, xpath: '//*[@id="contents"]/ul[1]/li[1]', needsHref: false });
+    }
+    for (const [name, url] of Object.entries(occto_format2)) {
+      tasks.push({ name, url, xpath: '//*[@id="contents"]/ul[2]/li[1]', needsHref: false });
+    }
+    return tasks;
   }
 
-  for (const [name, url] of Object.entries(egc_format1)) {
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-      const { text } = await getFirstByXPath(page, '//*[@id="meti_or"]/table[2]/tbody/tr[1]/td[1]');
-      results.push({ committee: name, latest: text, url });
-    } catch (e) {
-      results.push({ committee: name, latest: `ERROR: ${e}`, url });
+  async function runWithConcurrency(tasks, limit) {
+    const results = new Array(tasks.length);
+    let nextIndex = 0;
+
+    async function worker() {
+      while (true) {
+        const current = nextIndex++;
+        if (current >= tasks.length) break;
+        results[current] = await runTask(tasks[current]);
+      }
     }
+
+    const workers = [];
+    for (let i = 0; i < limit; i++) workers.push(worker());
+    await Promise.all(workers);
+    return results;
   }
 
-  for (const [name, url] of Object.entries(env_format1)) {
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-      const { text } = await getFirstByXPath(page, '//*[@id="main"]/div[2]/div/div/div/ul/li[1]');
-      results.push({ committee: name, latest: text, url });
-    } catch (e) {
-      results.push({ committee: name, latest: `ERROR: ${e}`, url });
-    }
-  }
-
-  for (const [name, url] of Object.entries(occto_format1)) {
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-      const { text } = await getFirstByXPath(page, '//*[@id="contents"]/ul[1]/li[1]');
-      results.push({ committee: name, latest: text, url });
-    } catch (e) {
-      results.push({ committee: name, latest: `ERROR: ${e}`, url });
-    }
-  }
-
-  for (const [name, url] of Object.entries(occto_format2)) {
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-      const { text } = await getFirstByXPath(page, '//*[@id="contents"]/ul[2]/li[1]');
-      results.push({ committee: name, latest: text, url });
-    } catch (e) {
-      results.push({ committee: name, latest: `ERROR: ${e}`, url });
-    }
-  }
+  const tasks = buildTasks();
+  const concurrency = Math.min(6, Math.max(2, Math.ceil(tasks.length / 4)));
+  const results = await runWithConcurrency(tasks, concurrency);
 
   await browser.close();
   return results;

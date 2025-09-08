@@ -12,6 +12,7 @@
   "description": "Express API for scraping Iinkai pages with Puppeteer",
   "dependencies": {
     "express": "^5.1.0",
-    "puppeteer": "^24.19.0"
+    "puppeteer-core": "^24.2.0",
+    "@sparticuz/chromium": "^133.0.0"
   }
 }

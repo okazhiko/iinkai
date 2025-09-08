@@ -1,4 +1,5 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 const meti_format1 = {
   '調達価格算定委員会': 'https://www.meti.go.jp/shingikai/santeii/',
@@ -55,7 +56,17 @@ function absolutize(baseUrl, href) {
 }
 
 async function scrapeAll() {
-  const browser = await puppeteer.launch({ headless: 'new' });
+  const isVercel = !!process.env.VERCEL || process.env.AWS_REGION;
+  const launchOptions = isVercel
+    ? {
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+      }
+    : { headless: 'new' };
+
+  const browser = await puppeteer.launch(launchOptions);
   const page = await browser.newPage();
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
   page.setDefaultNavigationTimeout(60000);
